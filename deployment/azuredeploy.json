@@ -41,7 +41,7 @@
       }
     },
     "repositoryUrl": {
-      "defaultValue": " https://github.com/AbhinavTrips/azure-cosmosdb-nosql-api-nodejs-bookstore.git",
+      "defaultValue": " https://github.com/AbhinavTrips/cosmos-bookstore.git",
       "type": "String",
       "metadata": {
         "description": ""
