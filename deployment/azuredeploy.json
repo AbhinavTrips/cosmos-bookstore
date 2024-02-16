@@ -1,0 +1,243 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "applicationName": {
+      "defaultValue": "[format('CosmosBookStore{0}', uniqueString(resourceGroup().id))]",
+      "maxLength": 30,
+      "type": "String",
+      "metadata": {
+        "description": "CosmosBookstore"
+      }
+    },
+    "appServicePlanTier": {
+      "defaultValue": "S1",
+      "allowedValues": [
+        "F1",
+        "D1",
+        "B1",
+        "B2",
+        "B3",
+        "S1",
+        "S2",
+        "S3",
+        "P1",
+        "P2",
+        "P3",
+        "P4"
+      ],
+      "type": "String",
+      "metadata": {
+        "description": "App Service Plan's pricing tier. Details at https://azure.microsoft.com/en-us/pricing/details/app-service/"
+      }
+    },
+    "appServicePlanInstances": {
+      "defaultValue": 1,
+      "minValue": 1,
+      "maxValue": 3,
+      "type": "Int",
+      "metadata": {
+        "description": "App Service Plan's instance count"
+      }
+    },
+    "repositoryUrl": {
+      "defaultValue": " https://github.com/AbhinavTrips/azure-cosmosdb-nosql-api-nodejs-bookstore.git",
+      "type": "String",
+      "metadata": {
+        "description": ""
+      }
+    },
+    "branch": {
+      "defaultValue": "master",
+      "type": "String",
+      "metadata": {
+        "description": "The branch of the GitHub repository to use."
+      }
+    },
+    "location": {
+      "defaultValue": "[resourceGroup().location]",
+      "type": "String",
+      "metadata": {
+        "description": "Location for the Azure Cosmos DB account."
+      }
+    },
+    "databaseName": {
+      "defaultValue": "cosmosbookstore",
+      "type": "String",
+      "metadata": {
+        "description": "The name for the NoSQL API database"
+      }
+    },
+    "container1Name": {
+      "defaultValue": "books",
+      "type": "String",
+      "metadata": {
+        "description": "The name for the first container"
+      }
+    },
+    "container2Name": {
+      "defaultValue": "genres",
+      "type": "String",
+      "metadata": {
+        "description": "The name for the second container"
+      }
+    },
+    "throughput": {
+      "defaultValue": 8000,
+      "minValue": 400,
+      "maxValue": 1000000,
+      "type": "Int",
+      "metadata": {
+        "description": "The shared throughput for the NoSQL database"
+      }
+    }
+  },
+  "variables": {
+    "linuxFxVersion": "NODE|14-lts",
+    "cosmosAccountName": "[toLower(parameters('applicationName'))]",
+    "websiteName": "[parameters('applicationName')]",
+    "hostingPlanName": "[parameters('applicationName')]",
+    "alwaysOn": false
+  },
+  "resources": [
+    {
+      "type": "Microsoft.DocumentDB/databaseAccounts",
+      "apiVersion": "2022-05-15",
+      "name": "[toLower(variables('cosmosAccountName'))]",
+      "location": "[parameters('location')]",
+      "kind": "GlobalDocumentDB",
+      "properties": {
+        "consistencyPolicy": {
+          "defaultConsistencyLevel": "Session"
+        },
+        "locations": [
+          {
+            "locationName": "[parameters('location')]",
+            "failoverPriority": 0,
+            "isZoneRedundant": false
+          }
+        ],
+        "databaseAccountOfferType": "Standard"
+      }
+    },
+    {
+      "type": "Microsoft.DocumentDB/databaseAccounts/sqlDatabases",
+      "apiVersion": "2022-05-15",
+      "name": "[format('{0}/{1}', toLower(variables('cosmosAccountName')), parameters('databaseName'))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.DocumentDB/databaseAccounts', toLower(variables('cosmosAccountName')))]"
+      ],
+      "properties": {
+        "resource": {
+          "id": "[parameters('databaseName')]"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers",
+      "apiVersion": "2022-05-15",
+      "name": "[format('{0}/{1}', format('{0}/{1}', toLower(variables('cosmosAccountName')), parameters('databaseName')), parameters('container1Name'))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.DocumentDB/databaseAccounts/sqlDatabases', variables('cosmosAccountName'), parameters('databaseName'))]"
+      ],
+      "properties": {
+        "resource": {
+          "id": "[parameters('container1Name')]",
+          "partitionKey": {
+            "paths": ["/_id"],
+            "kind": "Hash"
+          }
+        },
+        "options": {
+          "throughput": "[parameters('throughput')]"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers",
+      "apiVersion": "2022-05-15",
+      "name": "[format('{0}/{1}', format('{0}/{1}', toLower(variables('cosmosAccountName')), parameters('databaseName')), parameters('container2Name'))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.DocumentDB/databaseAccounts/sqlDatabases', variables('cosmosAccountName'), parameters('databaseName'))]"
+      ],
+      "properties": {
+        "resource": {
+          "id": "[parameters('container2Name')]",
+          "partitionKey": {
+            "paths": ["/_id"],
+            "kind": "Hash"
+          }
+        },
+        "options": {
+          "throughput": "[parameters('throughput')]"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Web/serverfarms",
+      "apiVersion": "2020-06-01",
+      "name": "[variables('hostingPlanName')]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "[parameters('appServicePlanTier')]",
+        "capacity": "[parameters('appServicePlanInstances')]"
+      },
+      "kind": "linux",
+      "properties": {
+        "reserved": true
+      }
+    },
+    {
+      "type": "Microsoft.Web/sites",
+      "apiVersion": "2020-09-01",
+      "name": "[variables('websiteName')]",
+      "location": "[parameters('location')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.DocumentDB/databaseAccounts', variables('cosmosAccountName'))]",
+        "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]"
+      ],
+      "properties": {
+        "serverFarmId": "[variables('hostingPlanName')]",
+        "siteConfig": {
+          "linuxFxVersion": "[variables('linuxFxVersion')]",
+          "alwaysOn": "[variables('alwaysOn')]",
+          "appCommandLine": "pm2 start ecosystem.config.js --no-daemon"
+        }
+      },
+      "resources": [
+        {
+          "type": "config",
+          "apiVersion": "2020-06-01",
+          "name": "appsettings",
+          "dependsOn": [
+            "[resourceId('Microsoft.Web/Sites', variables('websiteName'))]",
+            "[resourceId('Microsoft.Web/Sites/sourcecontrols', variables('websiteName'), 'web')]"
+          ],
+          "properties": {
+            "WEBSITE_NODE_DEFAULT_VERSION": "14.0.0",
+            "LOG_LEVEL": "log",
+            "LOG_ENABLED": true,
+            "COSMOS_BOOKSTORE_DB_CONNECTION_STRING": "[listConnectionStrings(resourceId('Microsoft.DocumentDB/databaseAccounts', toLower(parameters('applicationName'))), '2019-12-12').connectionStrings[0].connectionString]",
+            "SEARCH_API_KEY": "",
+            "SEARCH_API_ENDPOINT": "",
+            "SEARCH_INDEX_NAME": "",
+            "NODE_ENV": "production"
+          }
+        },
+        {
+          "type": "sourcecontrols",
+          "apiVersion": "2020-06-01",
+          "name": "web",
+          "dependsOn": [
+            "[resourceId('Microsoft.Web/Sites', variables('websiteName'))]"
+          ],
+          "properties": {
+            "repoUrl": "[parameters('repositoryUrl')]",
+            "branch": "[parameters('branch')]",
+            "IsManualIntegration": true
+          }
+        }
+      ]
+    }
+  ]
+}
